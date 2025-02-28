@@ -15,29 +15,17 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'IpCheck',
       theme: ThemeData(
-        brightness: Brightness.light,
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+          primary: Colors.blue,
+        ),
       ),
       darkTheme: ThemeData(
-        brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.blue,
           brightness: Brightness.dark,
+          primary: Colors.blue,
         ),
       ),
 
@@ -65,9 +53,9 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-enum IpRequestState { yes, no, pending }
-
 class _MyHomePageState extends State<MyHomePage> {
+  int _resets = 0;
+
   @override
   Widget build(BuildContext context) {
     // This method is rerun every time setState is called, for instance as done
@@ -86,29 +74,40 @@ class _MyHomePageState extends State<MyHomePage> {
         // Here we take the value from the MyHomePage object that was created by
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
+
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            tooltip: "Refresh IPv4/6 checks",
+            onPressed: () => setState(() => ++_resets),
+          ),
+        ],
       ),
       body: Center(
         // Center is a layout widget. It takes a single child and positions it
         // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: <Widget>[
-            IPCheckWidget(version: IPVersion.v6),
-            IPCheckWidget(version: IPVersion.v4),
-          ],
+        child: KeyedSubtree(
+          key: ValueKey(_resets),
+          child: Column(
+            // Column is also a layout widget. It takes a list of children and
+            // arranges them vertically. By default, it sizes itself to fit its
+            // children horizontally, and tries to be as tall as its parent.
+            //
+            // Column has various properties to control how it sizes itself and
+            // how it positions its children. Here we use mainAxisAlignment to
+            // center the children vertically; the main axis here is the vertical
+            // axis because Columns are vertical (the cross axis would be
+            // horizontal).
+            //
+            // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
+            // action in the IDE, or press "p" in the console), to see the
+            // wireframe for each widget.
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: <Widget>[
+              IPCheckWidget(version: IPVersion.v6),
+              IPCheckWidget(version: IPVersion.v4),
+            ],
+          ),
         ),
       ),
     );
@@ -129,6 +128,25 @@ enum IPVersion {
   }
 }
 
+enum IpRequestState {
+  yes,
+  no,
+  pending;
+
+  IconData _repr() {
+    switch (this) {
+      case IpRequestState.yes:
+        return Icons.copy;
+      case IpRequestState.pending:
+        return Icons.pending;
+      case IpRequestState.no:
+        return Icons.error;
+    }
+  }
+
+  Icon repr() => Icon(_repr());
+}
+
 class IPCheckWidget extends StatefulWidget {
   final IPVersion version;
 
@@ -139,8 +157,9 @@ class IPCheckWidget extends StatefulWidget {
 }
 
 class IPCheckWidgetState extends State<IPCheckWidget> {
-  IpRequestState ip = IpRequestState.pending;
-  String? ipString;
+  IpRequestState _ip = IpRequestState.pending;
+  String? _ipString;
+  bool _show = false;
 
   @override
   void initState() {
@@ -159,15 +178,15 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
 
     c
         .get(Uri.https("$request.icanhazip.com"))
-        .then((r) {
+        .then((r) async {
           setState(() {
-            ipString = r.body.trim();
-            ip = IpRequestState.yes;
+            _ipString = r.body.trim();
+            _ip = IpRequestState.yes;
           });
         })
         .catchError((_) {
           setState(() {
-            ip = IpRequestState.no;
+            _ip = IpRequestState.no;
           });
         });
   }
@@ -178,7 +197,7 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
 
     final ipver = widget.version.repr();
 
-    switch (ip) {
+    switch (_ip) {
       case IpRequestState.pending:
         out = "Probing for $ipver support...";
       case IpRequestState.no:
@@ -189,7 +208,7 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
 
     final Color cardColor;
 
-    switch (ip) {
+    switch (_ip) {
       case IpRequestState.no:
         cardColor = Colors.red;
       case IpRequestState.yes:
@@ -203,7 +222,7 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
       child: InkWell(
         splashColor: Theme.of(context).splashColor,
         onTap: () async {
-          if (ipString case String s) {
+          if (_ipString case String s) {
             await Clipboard.setData(ClipboardData(text: s));
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -215,12 +234,42 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: SizedBox(
-            width: 600,
-            child: Column(
-              children: <Widget>[
-                Text(out, style: Theme.of(context).textTheme.headlineMedium),
-                if (ipString case String s)
-                  Text(s, style: Theme.of(context).textTheme.headlineMedium),
+            width: 550,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Spacer(),
+                Expanded(
+                  flex: 5,
+                  child: Column(
+                    children: <Widget>[
+                      Text(
+                        out,
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
+                      if (_ipString case String s)
+                        _show
+                            ? Text(
+                              s,
+                              style: Theme.of(context).textTheme.headlineSmall,
+                            )
+                            : TextButton(
+                              child: Text(
+                                "Reveal",
+                                style:
+                                    Theme.of(context).textTheme.headlineSmall,
+                              ),
+                              onPressed: () => setState(() => _show = true),
+                            ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _ip.repr(),
+                  ),
+                ),
               ],
             ),
           ),
