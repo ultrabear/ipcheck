@@ -67,12 +67,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.primary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
 
         actions: [
@@ -84,29 +79,19 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
         child: KeyedSubtree(
           key: ValueKey(_resets),
-          child: Column(
-            // Column is also a layout widget. It takes a list of children and
-            // arranges them vertically. By default, it sizes itself to fit its
-            // children horizontally, and tries to be as tall as its parent.
-            //
-            // Column has various properties to control how it sizes itself and
-            // how it positions its children. Here we use mainAxisAlignment to
-            // center the children vertically; the main axis here is the vertical
-            // axis because Columns are vertical (the cross axis would be
-            // horizontal).
-            //
-            // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-            // action in the IDE, or press "p" in the console), to see the
-            // wireframe for each widget.
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: <Widget>[
-              IPCheckWidget(version: IPVersion.v6),
-              IPCheckWidget(version: IPVersion.v4),
-            ],
+          child: RefreshIndicator(
+            child: ListView(
+              children: <Widget>[
+                IPCheckWidget(version: IPVersion.v6),
+                IPCheckWidget(version: IPVersion.v4),
+              ],
+            ),
+
+            onRefresh: () async {
+              setState(() => ++_resets);
+            },
           ),
         ),
       ),
@@ -118,33 +103,37 @@ enum IPVersion {
   v4,
   v6;
 
-  String repr() {
-    switch (this) {
-      case IPVersion.v4:
-        return 'IPv4';
-      case IPVersion.v6:
-        return 'IPv6';
-    }
-  }
+  String repr() => switch (this) {
+    IPVersion.v4 => 'IPv4',
+    IPVersion.v6 => 'IPv6',
+  };
+
+  String icanhaz() => switch (this) {
+    IPVersion.v4 => "4",
+    IPVersion.v6 => "6",
+  };
 }
 
-enum IpRequestState {
-  yes,
-  no,
-  pending;
+sealed class IPQuery {
+  Icon repr();
+}
 
-  IconData _repr() {
-    switch (this) {
-      case IpRequestState.yes:
-        return Icons.copy;
-      case IpRequestState.pending:
-        return Icons.pending;
-      case IpRequestState.no:
-        return Icons.error;
-    }
-  }
+class PendingIp implements IPQuery {
+  @override
+  Icon repr() => Icon(Icons.pending);
+}
 
-  Icon repr() => Icon(_repr());
+class NoIp implements IPQuery {
+  @override
+  Icon repr() => Icon(Icons.error);
+}
+
+class YesIp implements IPQuery {
+  final String ip;
+
+  const YesIp(this.ip);
+  @override
+  Icon repr() => Icon(Icons.copy);
 }
 
 class IPCheckWidget extends StatefulWidget {
@@ -157,22 +146,14 @@ class IPCheckWidget extends StatefulWidget {
 }
 
 class IPCheckWidgetState extends State<IPCheckWidget> {
-  IpRequestState _ip = IpRequestState.pending;
-  String? _ipString;
+  IPQuery _ip = PendingIp();
   bool _show = false;
 
   @override
   void initState() {
     super.initState();
 
-    final String request;
-
-    switch (widget.version) {
-      case IPVersion.v4:
-        request = '4';
-      case IPVersion.v6:
-        request = '6';
-    }
+    final request = widget.version.icanhaz();
 
     final c = http.Client();
 
@@ -180,49 +161,32 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
         .get(Uri.https("$request.icanhazip.com"))
         .then((r) async {
           setState(() {
-            _ipString = r.body.trim();
-            _ip = IpRequestState.yes;
+            _ip = YesIp(r.body.trim());
           });
         })
         .catchError((_) {
           setState(() {
-            _ip = IpRequestState.no;
+            _ip = NoIp();
           });
         });
   }
 
   @override
   Widget build(BuildContext context) {
-    final String out;
-
     final ipver = widget.version.repr();
 
-    switch (_ip) {
-      case IpRequestState.pending:
-        out = "Probing for $ipver support...";
-      case IpRequestState.no:
-        out = "$ipver is not supported.";
-      case IpRequestState.yes:
-        out = "$ipver is supported";
-    }
-
-    final Color cardColor;
-
-    switch (_ip) {
-      case IpRequestState.no:
-        cardColor = Colors.red;
-      case IpRequestState.yes:
-        cardColor = Colors.green;
-      case IpRequestState.pending:
-        cardColor = Colors.yellow;
-    }
+    final (out, cardColor) = switch (_ip) {
+      PendingIp() => ("Probing for $ipver support...", Colors.yellow),
+      NoIp() => ("$ipver is not supported.", Colors.red),
+      YesIp() => ("$ipver is supported", Colors.green),
+    };
 
     return Card(
       shape: Border(left: BorderSide(width: 10, color: cardColor)),
       child: InkWell(
         splashColor: Theme.of(context).splashColor,
         onTap: () async {
-          if (_ipString case String s) {
+          if (_ip case YesIp(ip: final s)) {
             await Clipboard.setData(ClipboardData(text: s));
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -247,7 +211,7 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
                         out,
                         style: Theme.of(context).textTheme.headlineMedium,
                       ),
-                      if (_ipString case String s)
+                      if (_ip case YesIp(ip: final s))
                         _show
                             ? Text(
                               s,
@@ -255,7 +219,7 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
                             )
                             : TextButton(
                               child: Text(
-                                "Reveal",
+                                "Reveal IP",
                                 style:
                                     Theme.of(context).textTheme.headlineSmall,
                               ),
