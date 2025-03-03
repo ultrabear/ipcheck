@@ -159,7 +159,7 @@ class IPCheckWidgetState extends State<IPCheckWidget> {
 
     c
         .get(Uri.https("$request.icanhazip.com"))
-        .then((r) async {
+        .then((r) {
           setState(() {
             _ip = YesIp(r.body.trim());
           });
